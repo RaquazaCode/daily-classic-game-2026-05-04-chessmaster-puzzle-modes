@@ -1,0 +1,16 @@
+{
+  "name": "daily-classic-game-2026-05-04-chessmaster-puzzle-modes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4173 --directory src",
+    "test": "node --test tests/game-core.test.mjs && node scripts/self-check.mjs",
+    "build": "node scripts/build.mjs",
+    "verify": "pnpm test && pnpm build",
+    "capture": "node scripts/playwright-capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.54.2"
+  }
+}

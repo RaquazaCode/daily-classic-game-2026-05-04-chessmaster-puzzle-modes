@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Chess Time Attack</title>
+  <rect width="64" height="64" rx="12" fill="#18302b" />
+  <path d="M20 50h24l-2-6H22zm5-9h14l-1.5-5.5 4-8-4-3 1-6h-5l-1 4h-1l-1-4h-5l1 6-4 3 4 8z" fill="#f6ead5" />
+</svg>

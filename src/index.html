@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chess Time Attack</title>
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="hero">
+        <p class="eyebrow">Daily Classic Game</p>
+        <h1>Chess Time Attack</h1>
+        <p class="summary">Deterministic blitz chess with small time bonuses for sharp tactical play.</p>
+      </header>
+      <main class="shell">
+        <section class="board-panel">
+          <div id="board" class="board" aria-label="Chess board"></div>
+        </section>
+        <aside class="sidebar">
+          <div id="status" class="card"></div>
+          <div id="moves" class="card"></div>
+          <div class="card controls">
+            <h2>Controls</h2>
+            <p>`Enter` start, click squares to move, `P` pause, `R` reset.</p>
+          </div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
