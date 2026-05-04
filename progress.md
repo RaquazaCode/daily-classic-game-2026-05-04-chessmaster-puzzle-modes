@@ -4,4 +4,25 @@
 - Selected `chessmaster-chess` from the queue and locked the `puzzle modes` twist.
 - Scaffolded a brand-new canonical folder at `games/2026-05-04-chessmaster-puzzle-modes/`.
 - Seeded the folder from the April 28 chess implementation as a local template only.
-- Next step: make the first scaffold commit, create the brand-new GitHub repository, and then convert the copied chess app into a deterministic puzzle campaign.
+- Created the brand-new GitHub repo `daily-classic-game-2026-05-04-chessmaster-puzzle-modes` immediately after the scaffold commit.
+- Reworked the copied chess engine into a deterministic three-board puzzle session with:
+  - mate-in-one validation
+  - solve clocks
+  - score bonuses and reset penalties
+  - automatic board transitions
+  - required browser hooks
+- Rebuilt the interface as a study-board layout with pinned paper cards and responsive board rendering.
+- Added deterministic verification:
+  - `pnpm test`
+  - `node scripts/self-check.mjs`
+  - `pnpm build`
+  - `pnpm capture`
+- Captured:
+  - `screen-start.png`
+  - `screen-middle.png`
+  - `screen-final.png`
+  - `clip-01-scholar-finish.gif`
+  - `clip-02-fools-net.gif`
+  - `clip-03-legalls-snap.gif`
+  - `render_game_to_text.txt`
+- Remaining automation work: create feature-branch commits, push the branch, open and merge the PR, run post-merge verification, attempt preview deploy, and reconcile automation records.

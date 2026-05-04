@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  STARTING_CLOCK_MS,
+  TRANSITION_MS,
   advanceTime,
   clickSquare,
   createGame,
@@ -11,99 +11,94 @@ import {
   startGame
 } from "../src/game-core.js";
 
+function payload(state) {
+  return JSON.parse(renderGameToText(state));
+}
+
 function freshGame() {
-  const state = createGame(20260428);
+  const state = createGame(20260504);
   startGame(state);
   return state;
 }
 
-test("white pawn selection exposes the standard two-step opening", () => {
-  const state = freshGame();
-
-  const result = clickSquare(state, 6, 4);
+function solveFirstPuzzle(state) {
+  const result = makeMove(state, "h5", "f7");
   assert.equal(result.ok, true);
-  assert.deepEqual(new Set(state.legalTargets), new Set(["5,4", "4,4"]));
-});
+  assert.equal(result.reason, "puzzle-solved");
+}
 
-test("scholar mate produces deterministic checkmate for white", () => {
-  const state = freshGame();
-  const sequence = [
-    ["e2", "e4"],
-    ["e7", "e5"],
-    ["d1", "h5"],
-    ["b8", "c6"],
-    ["f1", "c4"],
-    ["g8", "f6"],
-    ["h5", "f7"]
-  ];
-
-  for (const [from, to] of sequence) {
-    const result = makeMove(state, from, to);
-    assert.equal(result.ok, true, `${from}-${to} should be legal`);
-  }
-
-  const payload = JSON.parse(renderGameToText(state));
-  assert.equal(payload.phase, "gameover");
-  assert.equal(payload.winner, "white");
-  assert.equal(payload.winnerReason, "checkmate");
-  assert.equal(payload.lastMove, "Qh5xf7#");
-  assert.equal(payload.check, "black");
-  assert.equal(payload.captured.white[0], "pawn");
-});
-
-test("en passant capture removes the pawn and awards material score", () => {
-  const state = freshGame();
-  const sequence = [
-    ["e2", "e4"],
-    ["a7", "a6"],
-    ["e4", "e5"],
-    ["d7", "d5"],
-    ["e5", "d6"]
-  ];
-
-  for (const [from, to] of sequence) {
-    const result = makeMove(state, from, to);
-    assert.equal(result.ok, true);
-  }
-
-  const payload = JSON.parse(renderGameToText(state));
-  assert.equal(payload.board[2][3], "wP");
-  assert.equal(payload.board[3][3], "__");
-  assert.equal(payload.score.white, 100);
-  assert.equal(payload.lastMove, "exd6");
-});
-
-test("white can castle kingside after the lane is cleared", () => {
-  const state = freshGame();
-  const sequence = [
-    ["e2", "e4"],
-    ["a7", "a6"],
-    ["g1", "f3"],
-    ["a6", "a5"],
-    ["f1", "e2"],
-    ["a5", "a4"],
-    ["e1", "g1"]
-  ];
-
-  for (const [from, to] of sequence) {
-    const result = makeMove(state, from, to);
-    assert.equal(result.ok, true);
-  }
-
-  const payload = JSON.parse(renderGameToText(state));
-  assert.equal(payload.board[7][6], "wK");
-  assert.equal(payload.board[7][5], "wR");
-  assert.equal(payload.lastMove, "O-O");
-});
-
-test("the active side can lose on time", () => {
+test("opening puzzle exposes f7 as a legal queen target", () => {
   const state = freshGame();
 
-  advanceTime(state, STARTING_CLOCK_MS);
+  const result = clickSquare(state, 3, 7);
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "selected");
+  assert.equal(new Set(state.legalTargets).has("1,5"), true);
+});
 
-  const payload = JSON.parse(renderGameToText(state));
-  assert.equal(payload.phase, "gameover");
-  assert.equal(payload.winner, "black");
-  assert.equal(payload.winnerReason, "flag");
-  assert.equal(payload.clocks.white, 0);
+test("first puzzle solve enters the transition phase", () => {
+  const state = freshGame();
+
+  solveFirstPuzzle(state);
+
+  const view = payload(state);
+  assert.equal(view.phase, "transition");
+  assert.equal(view.solvedCount, 1);
+  assert.equal(view.lastMove, "Qh5xf7#");
+  assert.equal(view.totalScore > 0, true);
+});
+
+test("transition loads the second puzzle with black to move", () => {
+  const state = freshGame();
+
+  solveFirstPuzzle(state);
+  advanceTime(state, TRANSITION_MS);
+
+  const view = payload(state);
+  assert.equal(view.phase, "running");
+  assert.equal(view.puzzleIndex, 2);
+  assert.equal(view.playerColor, "black");
+  assert.equal(view.turn, "black");
+});
+
+test("a legal miss resets the puzzle and counts a mistake", () => {
+  const state = freshGame();
+
+  solveFirstPuzzle(state);
+  advanceTime(state, TRANSITION_MS);
+  const scoreBeforeMiss = payload(state).totalScore;
+
+  const miss = makeMove(state, "b8", "c6");
+  assert.equal(miss.ok, false);
+  assert.equal(miss.reason, "missed-mate");
+
+  const view = payload(state);
+  assert.equal(view.phase, "running");
+  assert.equal(view.puzzleIndex, 2);
+  assert.equal(view.turn, "black");
+  assert.equal(view.totalMistakes, 1);
+  assert.equal(view.totalScore < scoreBeforeMiss, true);
+  assert.equal(view.moveHistory.length, 0);
+  assert.equal(view.lastMove, null);
+});
+
+test("the full solve route clears the gauntlet", () => {
+  const state = freshGame();
+
+  advanceTime(state, 1_200);
+  assert.equal(makeMove(state, "h5", "f7").ok, true);
+  advanceTime(state, TRANSITION_MS);
+  advanceTime(state, 900);
+  assert.equal(makeMove(state, "d8", "h4").ok, true);
+  advanceTime(state, TRANSITION_MS);
+  advanceTime(state, 1_700);
+  assert.equal(makeMove(state, "c3", "d5").ok, true);
+
+  const view = payload(state);
+  assert.equal(view.phase, "gameover");
+  assert.equal(view.winner, "player");
+  assert.equal(view.winnerReason, "all-puzzles-cleared");
+  assert.equal(view.solvedCount, 3);
+  assert.equal(view.lastMove, "Nc3-d5#");
+  assert.equal(view.totalMistakes, 0);
 });

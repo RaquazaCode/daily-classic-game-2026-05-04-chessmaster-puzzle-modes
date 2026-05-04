@@ -12,9 +12,9 @@ const actionPath = path.join(gameDir, "docs", "plans", "playwright-actions.json"
 const fallbackGifHex = "47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b";
 
 const clipRanges = [
-  { name: "clip-01-opening-central-control", start: 0, end: 5 },
-  { name: "clip-02-battery-setup", start: 6, end: 11 },
-  { name: "clip-03-scholar-mate-finish", start: 12, end: 15 }
+  { name: "clip-01-scholar-finish", start: 0, end: 1 },
+  { name: "clip-02-fools-net", start: 2, end: 3 },
+  { name: "clip-03-legalls-snap", start: 4, end: 5 }
 ];
 
 function hasBinary(name) {
@@ -109,6 +109,10 @@ try {
     await runStep(page, boardBox, steps[index]);
     await app.screenshot({ path: path.join(framesDir, frameName(index)) });
 
+    if (index === 3) {
+      await app.screenshot({ path: path.join(outDir, "screen-middle.png") });
+    }
+
     for (const range of clipRanges) {
       if (index === range.end) {
         await copyFile(
@@ -123,13 +127,20 @@ try {
   await writeFile(path.join(outDir, "render_game_to_text.txt"), `${finalText}\n`, "utf8");
 
   const parsed = JSON.parse(finalText);
-  if (parsed.phase !== "gameover" || parsed.winner !== "white" || parsed.winnerReason !== "checkmate") {
+  if (
+    parsed.phase !== "gameover" ||
+    parsed.winner !== "player" ||
+    parsed.winnerReason !== "all-puzzles-cleared"
+  ) {
     throw new Error(
-      `expected white checkmate route, got ${parsed.phase}/${parsed.winner}/${parsed.winnerReason}`
+      `expected cleared puzzle gauntlet, got ${parsed.phase}/${parsed.winner}/${parsed.winnerReason}`
     );
   }
-  if (parsed.lastMove !== "Qh5xf7#") {
-    throw new Error(`expected final move Qh5xf7#, got ${parsed.lastMove}`);
+  if (parsed.solvedCount !== 3) {
+    throw new Error(`expected three solved puzzles, got ${parsed.solvedCount}`);
+  }
+  if (parsed.lastMove !== "Nc3-d5#") {
+    throw new Error(`expected final move Nc3-d5#, got ${parsed.lastMove}`);
   }
 
   await app.screenshot({ path: path.join(outDir, "screen-final.png") });
