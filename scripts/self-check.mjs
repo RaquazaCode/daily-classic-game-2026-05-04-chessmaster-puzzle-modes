@@ -1,4 +1,6 @@
 import {
+  PUZZLE_CLEAR_BASE,
+  TRANSITION_MS,
   advanceTime,
   createGame,
   makeMove,
@@ -6,24 +8,24 @@ import {
   startGame
 } from "../src/game-core.js";
 
-const state = createGame(20260428);
+const state = createGame(20260504);
 startGame(state);
 
 const route = [
-  ["e2", "e4", 1400],
-  ["e7", "e5", 1200],
-  ["d1", "h5", 800],
-  ["b8", "c6", 900],
-  ["f1", "c4", 900],
-  ["g8", "f6", 900],
-  ["h5", "f7", 700]
+  ["h5", "f7", 1_400],
+  ["d8", "h4", 900],
+  ["c3", "d5", 1_800]
 ];
 
-for (const [from, to, deltaMs] of route) {
+for (let index = 0; index < route.length; index += 1) {
+  const [from, to, deltaMs] = route[index];
   advanceTime(state, deltaMs);
   const result = makeMove(state, from, to);
   if (!result.ok) {
     throw new Error(`self-check failed on move ${from}-${to}`);
+  }
+  if (index < route.length - 1) {
+    advanceTime(state, TRANSITION_MS);
   }
 }
 
@@ -32,16 +34,22 @@ const payload = JSON.parse(renderGameToText(state));
 if (payload.phase !== "gameover") {
   throw new Error(`self-check failed: expected gameover, got ${payload.phase}`);
 }
-if (payload.winner !== "white" || payload.winnerReason !== "checkmate") {
+if (payload.winner !== "player" || payload.winnerReason !== "all-puzzles-cleared") {
   throw new Error(
-    `self-check failed: expected white checkmate, got ${payload.winner}/${payload.winnerReason}`
+    `self-check failed: expected player/all-puzzles-cleared, got ${payload.winner}/${payload.winnerReason}`
   );
 }
-if (payload.lastMove !== "Qh5xf7#") {
-  throw new Error(`self-check failed: expected Qh5xf7#, got ${payload.lastMove}`);
+if (payload.solvedCount !== 3) {
+  throw new Error(`self-check failed: expected 3 solved puzzles, got ${payload.solvedCount}`);
 }
-if (payload.clocks.white >= 95_000 || payload.clocks.black >= 95_000) {
-  throw new Error("self-check failed: clocks did not advance through the route");
+if (payload.lastMove !== "Nc3-d5#") {
+  throw new Error(`self-check failed: expected Nc3-d5#, got ${payload.lastMove}`);
+}
+if (payload.totalMistakes !== 0) {
+  throw new Error(`self-check failed: expected 0 mistakes, got ${payload.totalMistakes}`);
+}
+if (payload.totalScore <= PUZZLE_CLEAR_BASE * 3) {
+  throw new Error(`self-check failed: expected time bonus score, got ${payload.totalScore}`);
 }
 
 console.log("self-check complete");

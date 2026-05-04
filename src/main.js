@@ -11,6 +11,7 @@ import {
 } from "./game-core.js";
 
 const boardEl = document.querySelector("#board");
+const boardNoteEl = document.querySelector("#board-note");
 const statusEl = document.querySelector("#status");
 const movesEl = document.querySelector("#moves");
 
@@ -40,22 +41,20 @@ function formatClock(ms) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function pieceMaterialText(color) {
-  const labels = state.captured[color].map((type) => PIECE_LABELS[type]);
-  return labels.length > 0 ? labels.join(" ") : "None";
-}
-
-function gameResultText() {
-  if (state.phase !== "gameover") {
-    return `${capitalize(state.turn)} to move`;
+function phaseLabel(view) {
+  if (view.phase === "title") {
+    return "Ready";
   }
-  if (!state.winner) {
-    return "Draw by stalemate";
+  if (view.phase === "paused") {
+    return "Paused";
   }
-  if (state.winnerReason === "flag") {
-    return `${capitalize(state.winner)} wins on time`;
+  if (view.phase === "transition") {
+    return "Solved";
   }
-  return `${capitalize(state.winner)} wins by checkmate`;
+  if (view.phase === "gameover") {
+    return "Cleared";
+  }
+  return "Live";
 }
 
 function buildBoard() {
@@ -125,90 +124,82 @@ function renderBoard() {
   }
 }
 
-function renderStatus() {
-  const whiteDanger = state.clocks.white <= 10_000 ? " danger" : "";
-  const blackDanger = state.clocks.black <= 10_000 ? " danger" : "";
-  const whiteLeader = state.winner === "white" ? " safe" : "";
-  const blackLeader = state.winner === "black" ? " safe" : "";
-
-  statusEl.innerHTML = `
-    <h2>Match State</h2>
-    <div class="status-grid">
-      <div class="status-pill${whiteDanger}${whiteLeader}">
-        <strong>White Clock</strong>
-        <span>${formatClock(state.clocks.white)}</span>
-      </div>
-      <div class="status-pill${blackDanger}${blackLeader}">
-        <strong>Black Clock</strong>
-        <span>${formatClock(state.clocks.black)}</span>
-      </div>
-      <div class="status-pill">
-        <strong>White Score</strong>
-        <span>${state.score.white}</span>
-      </div>
-      <div class="status-pill">
-        <strong>Black Score</strong>
-        <span>${state.score.black}</span>
-      </div>
-    </div>
-    <p class="line"><strong>Result</strong><span>${gameResultText()}</span></p>
-    <p class="line"><strong>Twist</strong><span>Each move adds 1 second; captures add 2.5 more.</span></p>
-    <p class="line"><strong>White Captures</strong><span>${pieceMaterialText("white")}</span></p>
-    <p class="line"><strong>Black Captures</strong><span>${pieceMaterialText("black")}</span></p>
-    <p class="line"><strong>Status</strong><span>${state.status}</span></p>
+function renderBoardNote(view) {
+  boardNoteEl.innerHTML = `
+    <strong>${view.puzzleTitle}</strong>
+    <span>${capitalize(view.playerColor)} to move</span>
   `;
 }
 
-function groupedMoveRows() {
-  const rows = [];
+function renderStatus(view) {
+  const solvedText = `${view.solvedCount} / ${view.puzzleCount}`;
+  const timerClass = view.solveClockMs <= 10_000 ? " urgent" : "";
+  const phase = phaseLabel(view);
 
-  for (const move of state.moveHistory) {
-    const existing = rows[rows.length - 1];
-    if (move.color === "white" || !existing || existing.black) {
-      rows.push({
-        moveNumber: move.moveNumber,
-        white: move.color === "white" ? move.notation : "…",
-        black: move.color === "black" ? move.notation : ""
-      });
-    } else {
-      existing.black = move.notation;
-    }
-  }
-
-  return rows;
+  statusEl.innerHTML = `
+    <h2>Study Board</h2>
+    <div class="status-grid">
+      <div class="status-pill${timerClass}">
+        <strong>Solve Clock</strong>
+        <span>${formatClock(view.solveClockMs)}</span>
+      </div>
+      <div class="status-pill">
+        <strong>Total Score</strong>
+        <span>${view.totalScore}</span>
+      </div>
+      <div class="status-pill">
+        <strong>Boards Cleared</strong>
+        <span>${solvedText}</span>
+      </div>
+      <div class="status-pill">
+        <strong>Mistakes</strong>
+        <span>${view.totalMistakes}</span>
+      </div>
+    </div>
+    <p class="line"><strong>Phase</strong><span>${phase}</span></p>
+    <p class="line"><strong>Objective</strong><span>${view.objective}</span></p>
+    <p class="line"><strong>Hint</strong><span>${view.hint}</span></p>
+    <p class="line"><strong>Status</strong><span>${view.status}</span></p>
+  `;
 }
 
-function renderMoves() {
-  if (state.moveHistory.length === 0) {
-    movesEl.innerHTML = `
-      <h2>Move Sheet</h2>
-      <p>Open with <code>e2-e4</code>, race the clock, and watch the move list fill in live.</p>
-    `;
-    return;
-  }
-
-  const items = groupedMoveRows()
+function renderLedger(view) {
+  const solvedItems = view.solvedPuzzles
     .map(
-      (row) => `
-        <li>
-          <strong>${row.moveNumber}.</strong>
-          ${row.white || "…"}
-          ${row.black ? ` / ${row.black}` : ""}
+      (entry) => `
+        <li class="ledger-item">
+          <strong>${entry.title}</strong>
+          <span>${entry.notation} · +${entry.bonus}</span>
         </li>
       `
     )
     .join("");
 
+  const recentMove = view.lastMove
+    ? `<p class="line"><strong>Latest Finish</strong><span>${view.lastMove}</span></p>`
+    : "";
+
   movesEl.innerHTML = `
-    <h2>Move Sheet</h2>
-    <ol class="move-list">${items}</ol>
+    <h2>Puzzle Sheet</h2>
+    <p class="sheet-copy">Each board wants a single clean mating move. Any legal miss snaps the board back to the study start.</p>
+    <p class="line"><strong>Current Board</strong><span>${view.puzzleIndex} of ${view.puzzleCount}</span></p>
+    <p class="line"><strong>Side to Move</strong><span>${capitalize(view.playerColor)}</span></p>
+    ${recentMove}
+    <h3>Solved Boards</h3>
+    ${
+      solvedItems
+        ? `<ol class="ledger-list">${solvedItems}</ol>`
+        : `<p class="sheet-copy muted">No studies cleared yet. The gauntlet opens with ${view.puzzleTitle}.</p>`
+    }
   `;
 }
 
 function render() {
+  const view = JSON.parse(renderGameToText(state));
   renderBoard();
-  renderStatus();
-  renderMoves();
+  renderBoardNote(view);
+  renderStatus(view);
+  renderLedger(view);
 }
 
 buildBoard();
@@ -234,10 +225,7 @@ if (!manualMode) {
     const delta = timestamp - lastTimestamp;
     lastTimestamp = timestamp;
     if (advanceTime(state, delta)) {
-      renderStatus();
-      if (state.phase === "gameover") {
-        renderMoves();
-      }
+      render();
     }
     window.requestAnimationFrame(tick);
   };
@@ -251,4 +239,4 @@ window.advanceTime = (ms) => {
 };
 
 window.render_game_to_text = () => renderGameToText(state);
-window.__TIME_ATTACK_CHESS__ = state;
+window.__CHESSMASTER_PUZZLE_MODES__ = state;

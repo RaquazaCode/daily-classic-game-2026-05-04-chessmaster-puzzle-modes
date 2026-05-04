@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chess Time Attack</title>
+    <title>Chessmaster Puzzle Modes</title>
     <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -11,11 +11,14 @@
     <div id="app">
       <header class="hero">
         <p class="eyebrow">Daily Classic Game</p>
-        <h1>Chess Time Attack</h1>
-        <p class="summary">Deterministic blitz chess with small time bonuses for sharp tactical play.</p>
+        <h1>Chessmaster Puzzle Modes</h1>
+        <p class="summary">
+          Three deterministic mating studies, one move each, wrapped in a tournament bulletin board built for nightly automation.
+        </p>
       </header>
       <main class="shell">
         <section class="board-panel">
+          <div id="board-note" class="board-note"></div>
           <div id="board" class="board" aria-label="Chess board"></div>
         </section>
         <aside class="sidebar">
@@ -23,7 +26,8 @@
           <div id="moves" class="card"></div>
           <div class="card controls">
             <h2>Controls</h2>
-            <p>`Enter` start, click squares to move, `P` pause, `R` reset.</p>
+            <p><code>Enter</code> start or restart, click squares to move, <code>P</code> pause, <code>R</code> reset the gauntlet.</p>
+            <p>Browser hooks: <code>window.advanceTime(ms)</code> and <code>window.render_game_to_text()</code>.</p>
           </div>
         </aside>
       </main>

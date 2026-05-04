@@ -1,8 +1,5 @@
 export const BOARD_SIZE = 8;
 export const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
-export const STARTING_CLOCK_MS = 90_000;
-export const MOVE_INCREMENT_MS = 1_000;
-export const CAPTURE_BONUS_MS = 2_500;
 export const PIECE_LABELS = {
   pawn: "P",
   knight: "N",
@@ -12,19 +9,71 @@ export const PIECE_LABELS = {
   king: "K"
 };
 
+export const SOLVE_BONUS_PER_SECOND = 18;
+export const PUZZLE_CLEAR_BASE = 240;
+export const MISTAKE_PENALTY = 90;
+export const TRANSITION_MS = 1_000;
+
 const BACK_RANK = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"];
-const PIECE_VALUES = {
-  pawn: 100,
-  knight: 320,
-  bishop: 330,
-  rook: 500,
-  queen: 900,
-  king: 0
-};
-const CHECK_BONUS = 35;
-const CHECKMATE_BONUS = 600;
-const FLAG_BONUS = 320;
-const TIME_BONUS_PER_SECOND = 10;
+
+const PUZZLES = [
+  {
+    id: "scholar-finish",
+    title: "Scholar Finish",
+    objective: "White to move and mate in one.",
+    hint: "The queen-bishop battery is already aimed at f7.",
+    playerColor: "white",
+    solveWindowMs: 32_000,
+    setupMoves: [
+      ["e2", "e4"],
+      ["e7", "e5"],
+      ["d1", "h5"],
+      ["b8", "c6"],
+      ["f1", "c4"],
+      ["g8", "f6"]
+    ],
+    solution: ["h5", "f7"]
+  },
+  {
+    id: "fools-net",
+    title: "Fool's Net",
+    objective: "Black to move and mate in one.",
+    hint: "The dark-square diagonal to h4 is wide open.",
+    playerColor: "black",
+    solveWindowMs: 24_000,
+    setupMoves: [
+      ["f2", "f3"],
+      ["e7", "e5"],
+      ["g2", "g4"]
+    ],
+    solution: ["d8", "h4"]
+  },
+  {
+    id: "legalls-snap",
+    title: "Legall's Snap",
+    objective: "White to move and finish the queen sacrifice with mate in one.",
+    hint: "The knight jump ends the attack before the stolen queen can matter.",
+    playerColor: "white",
+    solveWindowMs: 38_000,
+    setupMoves: [
+      ["e2", "e4"],
+      ["e7", "e5"],
+      ["g1", "f3"],
+      ["b8", "c6"],
+      ["f1", "c4"],
+      ["d7", "d6"],
+      ["b1", "c3"],
+      ["c8", "g4"],
+      ["h2", "h3"],
+      ["g4", "h5"],
+      ["f3", "e5"],
+      ["h5", "d1"],
+      ["c4", "f7"],
+      ["e8", "e7"]
+    ],
+    solution: ["c3", "d5"]
+  }
+];
 
 function makePiece(color, type) {
   return { color, type };
@@ -51,6 +100,21 @@ function cloneCastlingRights(rights) {
   return {
     white: { ...rights.white },
     black: { ...rights.black }
+  };
+}
+
+function cloneMoveHistory(moveHistory) {
+  return moveHistory.map((move) => ({ ...move }));
+}
+
+function cloneLastMove(lastMove) {
+  if (!lastMove) {
+    return null;
+  }
+  return {
+    ...lastMove,
+    from: { ...lastMove.from },
+    to: { ...lastMove.to }
   };
 }
 
@@ -115,7 +179,7 @@ function listMaterial(captured) {
   return captured.map((type) => PIECE_LABELS[type]).join(" ");
 }
 
-function createState(seed) {
+function createBoardState(seed) {
   return {
     seed,
     phase: "title",
@@ -123,18 +187,6 @@ function createState(seed) {
     turn: "white",
     selected: null,
     legalTargets: [],
-    clocks: {
-      white: STARTING_CLOCK_MS,
-      black: STARTING_CLOCK_MS
-    },
-    score: {
-      white: 0,
-      black: 0
-    },
-    captured: {
-      white: [],
-      black: []
-    },
     castlingRights: {
       white: { kingSide: true, queenSide: true },
       black: { kingSide: true, queenSide: true }
@@ -143,24 +195,57 @@ function createState(seed) {
     check: null,
     winner: null,
     winnerReason: null,
-    status: "Press Enter to start. White moves first.",
+    status: "",
     moveHistory: [],
     lastMove: null,
     fullmoveNumber: 1,
-    incrementMs: MOVE_INCREMENT_MS,
-    captureBonusMs: CAPTURE_BONUS_MS
+    captured: {
+      white: [],
+      black: []
+    },
+    currentPuzzleIndex: 0,
+    pendingPuzzleIndex: null,
+    transitionMs: 0,
+    solveClockMs: 0,
+    totalScore: 0,
+    totalMistakes: 0,
+    solvedPuzzles: []
   };
 }
 
-export function createGame(seed = 20260428) {
-  return createState(seed);
+function snapshotBoardState(state) {
+  return {
+    board: cloneBoard(state.board),
+    turn: state.turn,
+    castlingRights: cloneCastlingRights(state.castlingRights),
+    enPassant: state.enPassant ? { ...state.enPassant } : null,
+    check: state.check,
+    lastMove: cloneLastMove(state.lastMove),
+    moveHistory: cloneMoveHistory(state.moveHistory),
+    fullmoveNumber: state.fullmoveNumber,
+    captured: {
+      white: [...state.captured.white],
+      black: [...state.captured.black]
+    }
+  };
 }
 
-export function resetGame(state, seed = state.seed, autoStart = false) {
-  Object.assign(state, createState(seed));
-  if (autoStart) {
-    startGame(state);
-  }
+function restoreBoardState(state, snapshot) {
+  state.board = cloneBoard(snapshot.board);
+  state.turn = snapshot.turn;
+  state.castlingRights = cloneCastlingRights(snapshot.castlingRights);
+  state.enPassant = snapshot.enPassant ? { ...snapshot.enPassant } : null;
+  state.check = snapshot.check;
+  state.lastMove = cloneLastMove(snapshot.lastMove);
+  state.moveHistory = cloneMoveHistory(snapshot.moveHistory);
+  state.fullmoveNumber = snapshot.fullmoveNumber;
+  state.captured = {
+    white: [...snapshot.captured.white],
+    black: [...snapshot.captured.black]
+  };
+  clearSelection(state);
+  state.winner = null;
+  state.winnerReason = null;
 }
 
 function clearSelection(state) {
@@ -173,39 +258,6 @@ function currentTurnStatus(state) {
     return `${capitalize(state.turn)} to move under check.`;
   }
   return `${capitalize(state.turn)} to move.`;
-}
-
-export function startGame(state) {
-  if (state.phase === "gameover") {
-    resetGame(state, state.seed, true);
-    return true;
-  }
-  if (state.phase === "paused") {
-    state.phase = "running";
-    state.status = currentTurnStatus(state);
-    return true;
-  }
-  if (state.phase === "title") {
-    state.phase = "running";
-    state.status = currentTurnStatus(state);
-    return true;
-  }
-  return false;
-}
-
-export function togglePause(state) {
-  if (state.phase === "running") {
-    state.phase = "paused";
-    clearSelection(state);
-    state.status = "Clocks paused. Press P to resume.";
-    return true;
-  }
-  if (state.phase === "paused") {
-    state.phase = "running";
-    state.status = currentTurnStatus(state);
-    return true;
-  }
-  return false;
 }
 
 function findKing(board, color) {
@@ -690,21 +742,16 @@ function endGame(state, winner, reason) {
   clearSelection(state);
 
   if (!winner) {
-    state.status = "Stalemate. No legal moves remain for either attack to continue.";
+    state.status = "Stalemate. The attack runs out of squares.";
     return;
   }
-
-  const timeBonus = Math.floor(state.clocks[winner] / 1_000) * TIME_BONUS_PER_SECOND;
-  state.score[winner] += timeBonus;
 
   if (reason === "checkmate") {
-    state.score[winner] += CHECKMATE_BONUS;
-    state.status = `Checkmate. ${capitalize(winner)} wins the board and banks ${timeBonus} clock points.`;
+    state.status = `${capitalize(winner)} delivers checkmate.`;
     return;
   }
 
-  state.score[winner] += FLAG_BONUS;
-  state.status = `${capitalize(winner)} wins on time and banks ${timeBonus} clock points.`;
+  state.status = `${capitalize(winner)} wins on the solve clock.`;
 }
 
 function buildNotation(move, flags) {
@@ -726,7 +773,7 @@ function buildNotation(move, flags) {
   return `${pieceLead}${origin}${action}${to}${promotion}${suffix}`;
 }
 
-function applyResolvedMove(state, move) {
+function applyEngineMove(state, move) {
   const beforeMoveNumber = state.fullmoveNumber;
   const mover = move.color;
   const nextTurn = opponent(mover);
@@ -744,12 +791,6 @@ function applyResolvedMove(state, move) {
 
   if (capturedPiece) {
     state.captured[mover].push(capturedPiece.type);
-    state.score[mover] += PIECE_VALUES[capturedPiece.type];
-  }
-
-  state.clocks[mover] += state.incrementMs;
-  if (capturedPiece) {
-    state.clocks[mover] += state.captureBonusMs;
   }
 
   state.turn = nextTurn;
@@ -762,10 +803,6 @@ function applyResolvedMove(state, move) {
     checkmate: state.check === state.turn && !hasLegalMoves
   };
   const stalemate = state.check !== state.turn && !hasLegalMoves;
-
-  if (flags.check) {
-    state.score[mover] += CHECK_BONUS;
-  }
 
   const notation = buildNotation(move, flags);
   state.lastMove.notation = notation;
@@ -807,9 +844,228 @@ function resolveMoveByCoords(state, fromRow, fromCol, toRow, toCol) {
   return options.find((move) => move.to.row === toRow && move.to.col === toCol) ?? null;
 }
 
+function cloneSolvedPuzzles(entries) {
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function createPuzzleMessage(puzzle) {
+  return `Puzzle ${puzzle.index + 1}/${PREPARED_PUZZLES.length}: ${puzzle.title}. ${capitalize(
+    puzzle.playerColor
+  )} to move and mate in one.`;
+}
+
+function loadPuzzle(state, index, activate) {
+  const puzzle = PREPARED_PUZZLES[index];
+  restoreBoardState(state, puzzle.snapshot);
+  state.lastMove = null;
+  state.moveHistory = [];
+  state.captured = {
+    white: [],
+    black: []
+  };
+  state.currentPuzzleIndex = index;
+  state.pendingPuzzleIndex = null;
+  state.transitionMs = 0;
+  state.solveClockMs = puzzle.solveWindowMs;
+  state.phase = activate ? "running" : "title";
+  state.status = activate
+    ? createPuzzleMessage(puzzle)
+    : `Press Enter to begin Puzzle ${index + 1}: ${puzzle.title}.`;
+}
+
+function createSessionState(seed) {
+  const state = createBoardState(seed);
+  state.totalScore = 0;
+  state.totalMistakes = 0;
+  state.solvedPuzzles = [];
+  loadPuzzle(state, 0, false);
+  return state;
+}
+
+function getCurrentPuzzle(state) {
+  return PREPARED_PUZZLES[state.currentPuzzleIndex];
+}
+
+function resetCurrentPuzzle(state, reason) {
+  const puzzle = getCurrentPuzzle(state);
+  state.totalMistakes += 1;
+  state.totalScore = Math.max(0, state.totalScore - MISTAKE_PENALTY);
+  restoreBoardState(state, puzzle.snapshot);
+  state.lastMove = null;
+  state.moveHistory = [];
+  state.captured = {
+    white: [],
+    black: []
+  };
+  state.phase = "running";
+  state.pendingPuzzleIndex = null;
+  state.transitionMs = 0;
+  state.solveClockMs = puzzle.solveWindowMs;
+  state.status = `${reason} Puzzle reset with a ${MISTAKE_PENALTY}-point penalty.`;
+}
+
+function markPuzzleSolved(state, notation) {
+  const puzzle = getCurrentPuzzle(state);
+  const bonus = PUZZLE_CLEAR_BASE + Math.floor(state.solveClockMs / 1_000) * SOLVE_BONUS_PER_SECOND;
+  state.totalScore += bonus;
+  state.solvedPuzzles.push({
+    id: puzzle.id,
+    title: puzzle.title,
+    notation,
+    bonus,
+    playerColor: puzzle.playerColor,
+    solveClockMs: Math.round(state.solveClockMs)
+  });
+  clearSelection(state);
+
+  if (state.currentPuzzleIndex === PREPARED_PUZZLES.length - 1) {
+    state.phase = "gameover";
+    state.winner = "player";
+    state.winnerReason = "all-puzzles-cleared";
+    state.status = `Gauntlet cleared. ${puzzle.title} ended with ${notation}. Final score ${state.totalScore}.`;
+    return {
+      ok: true,
+      reason: "gauntlet-cleared",
+      notation,
+      bonus
+    };
+  }
+
+  state.phase = "transition";
+  state.winner = null;
+  state.winnerReason = null;
+  state.pendingPuzzleIndex = state.currentPuzzleIndex + 1;
+  state.transitionMs = TRANSITION_MS;
+  state.status = `${puzzle.title} solved with ${notation}. Loading Puzzle ${state.pendingPuzzleIndex + 1}.`;
+  return {
+    ok: true,
+    reason: "puzzle-solved",
+    notation,
+    bonus
+  };
+}
+
+function commitPlayerMove(state, move) {
+  const puzzle = getCurrentPuzzle(state);
+  const result = applyEngineMove(state, move);
+
+  if (
+    state.phase === "gameover" &&
+    state.winner === puzzle.playerColor &&
+    state.winnerReason === "checkmate"
+  ) {
+    return markPuzzleSolved(state, result.notation);
+  }
+
+  resetCurrentPuzzle(state, `${result.notation} was legal but missed the forced mate.`);
+  return {
+    ok: false,
+    reason: "missed-mate",
+    notation: result.notation
+  };
+}
+
+function preparePuzzle(rawPuzzle, index) {
+  const state = createBoardState(20260504 + index);
+  state.phase = "running";
+  state.status = "Preparing puzzle.";
+
+  for (const [from, to] of rawPuzzle.setupMoves) {
+    const fromCoord = algebraicToCoord(from);
+    const toCoord = algebraicToCoord(to);
+    const move = resolveMoveByCoords(state, fromCoord.row, fromCoord.col, toCoord.row, toCoord.col);
+    if (!move) {
+      throw new Error(`Invalid setup move for ${rawPuzzle.id}: ${from}-${to}`);
+    }
+    applyEngineMove(state, move);
+    if (state.phase === "gameover") {
+      throw new Error(`Setup line unexpectedly ended the game for ${rawPuzzle.id}`);
+    }
+  }
+
+  if (state.turn !== rawPuzzle.playerColor) {
+    throw new Error(
+      `Puzzle ${rawPuzzle.id} expected ${rawPuzzle.playerColor} to move, found ${state.turn}`
+    );
+  }
+
+  const [solutionFrom, solutionTo] = rawPuzzle.solution;
+  const fromCoord = algebraicToCoord(solutionFrom);
+  const toCoord = algebraicToCoord(solutionTo);
+  const solutionMove = resolveMoveByCoords(state, fromCoord.row, fromCoord.col, toCoord.row, toCoord.col);
+  if (!solutionMove) {
+    throw new Error(`Puzzle ${rawPuzzle.id} has an illegal solution move ${solutionFrom}-${solutionTo}`);
+  }
+
+  const probe = createBoardState(9090 + index);
+  restoreBoardState(probe, snapshotBoardState(state));
+  probe.phase = "running";
+  const outcome = applyEngineMove(probe, solutionMove);
+  if (
+    probe.phase !== "gameover" ||
+    probe.winner !== rawPuzzle.playerColor ||
+    probe.winnerReason !== "checkmate"
+  ) {
+    throw new Error(`Puzzle ${rawPuzzle.id} solution does not end in checkmate`);
+  }
+
+  return {
+    ...rawPuzzle,
+    index,
+    snapshot: snapshotBoardState(state),
+    solutionNotation: outcome.notation
+  };
+}
+
+const PREPARED_PUZZLES = PUZZLES.map((puzzle, index) => preparePuzzle(puzzle, index));
+
+export function createGame(seed = 20260504) {
+  return createSessionState(seed);
+}
+
+export function resetGame(state, seed = state.seed, autoStart = false) {
+  Object.assign(state, createSessionState(seed));
+  if (autoStart) {
+    startGame(state);
+  }
+}
+
+export function startGame(state) {
+  if (state.phase === "gameover") {
+    resetGame(state, state.seed, true);
+    return true;
+  }
+  if (state.phase === "paused") {
+    state.phase = "running";
+    state.status = createPuzzleMessage(getCurrentPuzzle(state));
+    return true;
+  }
+  if (state.phase === "title") {
+    state.phase = "running";
+    state.status = createPuzzleMessage(getCurrentPuzzle(state));
+    return true;
+  }
+  return false;
+}
+
+export function togglePause(state) {
+  if (state.phase === "running") {
+    state.phase = "paused";
+    clearSelection(state);
+    state.status = "Puzzle timer paused. Press P to resume.";
+    return true;
+  }
+  if (state.phase === "paused") {
+    state.phase = "running";
+    state.status = createPuzzleMessage(getCurrentPuzzle(state));
+    return true;
+  }
+  return false;
+}
+
 export function makeMove(state, fromSquare, toSquare) {
   if (state.phase !== "running") {
-    state.status = "Start the match before moving pieces.";
+    state.status = "Start the current puzzle before moving pieces.";
     return { ok: false, reason: "not-running" };
   }
 
@@ -829,7 +1085,7 @@ export function makeMove(state, fromSquare, toSquare) {
     return { ok: false, reason: "illegal-move" };
   }
 
-  return applyResolvedMove(state, move);
+  return commitPlayerMove(state, move);
 }
 
 export function clickSquare(state, row, col) {
@@ -837,7 +1093,7 @@ export function clickSquare(state, row, col) {
     return { ok: false, reason: "out-of-bounds" };
   }
   if (state.phase !== "running") {
-    state.status = "Press Enter to start the clocks first.";
+    state.status = "Press Enter to activate the current puzzle.";
     return { ok: false, reason: "not-running" };
   }
 
@@ -851,7 +1107,7 @@ export function clickSquare(state, row, col) {
       (candidate) => candidate.to.row === row && candidate.to.col === col
     );
     if (move) {
-      return applyResolvedMove(state, move);
+      return commitPlayerMove(state, move);
     }
     if (selectedCoord.row === row && selectedCoord.col === col) {
       clearSelection(state);
@@ -863,7 +1119,7 @@ export function clickSquare(state, row, col) {
   const piece = state.board[row][col];
   if (!piece || piece.color !== state.turn) {
     clearSelection(state);
-    state.status = `Choose a ${state.turn} piece with a legal move.`;
+    state.status = `Choose a ${state.turn} piece that can deliver the finish.`;
     return { ok: false, reason: "wrong-piece" };
   }
 
@@ -884,21 +1140,41 @@ export function clickSquare(state, row, col) {
 }
 
 export function advanceTime(state, ms) {
-  if (state.phase !== "running" || ms <= 0) {
+  if (ms <= 0) {
     return false;
   }
 
-  state.clocks[state.turn] = Math.max(0, state.clocks[state.turn] - ms);
-  if (state.clocks[state.turn] === 0) {
-    endGame(state, opponent(state.turn), "flag");
+  if (state.phase === "running") {
+    state.solveClockMs = Math.max(0, state.solveClockMs - ms);
+    if (state.solveClockMs === 0) {
+      resetCurrentPuzzle(state, "Solve clock expired.");
+    }
+    return true;
   }
-  return true;
+
+  if (state.phase === "transition") {
+    state.transitionMs = Math.max(0, state.transitionMs - ms);
+    if (state.transitionMs === 0 && state.pendingPuzzleIndex != null) {
+      loadPuzzle(state, state.pendingPuzzleIndex, true);
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export function renderGameToText(state) {
   const selectedCoord = state.selected ? keyToCoord(state.selected) : null;
+  const puzzle = getCurrentPuzzle(state);
   const payload = {
     phase: state.phase,
+    puzzleIndex: state.currentPuzzleIndex + 1,
+    puzzleCount: PREPARED_PUZZLES.length,
+    puzzleId: puzzle.id,
+    puzzleTitle: puzzle.title,
+    objective: puzzle.objective,
+    hint: puzzle.hint,
+    playerColor: puzzle.playerColor,
     turn: state.turn,
     winner: state.winner,
     winnerReason: state.winnerReason,
@@ -908,15 +1184,12 @@ export function renderGameToText(state) {
       const coord = keyToCoord(key);
       return coordToAlgebraic(coord.row, coord.col);
     }),
-    clocks: {
-      white: Math.round(state.clocks.white),
-      black: Math.round(state.clocks.black)
-    },
-    score: { ...state.score },
-    captured: {
-      white: [...state.captured.white],
-      black: [...state.captured.black]
-    },
+    solveClockMs: Math.round(state.solveClockMs),
+    transitionMs: Math.round(state.transitionMs),
+    totalScore: state.totalScore,
+    totalMistakes: state.totalMistakes,
+    solvedCount: state.solvedPuzzles.length,
+    solvedPuzzles: cloneSolvedPuzzles(state.solvedPuzzles),
     lastMove: state.lastMove?.notation ?? null,
     moveHistory: state.moveHistory.map((move) => ({
       moveNumber: move.moveNumber,
